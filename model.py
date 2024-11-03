@@ -106,8 +106,10 @@ class GPT2(nn.Module):
         self.blocks = nn.Sequential(
             *[Block(config) for _ in range(config.n_layer)]
         )
+        # final projection layer
+        self.lm_head = nn.Linear(config.n_embed, config.vocab_size)
 
-    def forward(self, x):
+    def forward(self, x, targets=None):
         # x shape is (B, T)
         B, T = x.shape
         # token embedding
@@ -117,5 +119,12 @@ class GPT2(nn.Module):
         # add token and position embeddings 
         x = tok_emb + pos_emb # x shape is (B, T, C)
         # apply transformer blocks
-        logits = self.blocks(x) # x shape is (B, T, C)
-        return logits
+        x = self.blocks(x) # x shape is (B, T, C)
+        logits = self.lm_head(x) # logits shape is (B, T, vocab_size)
+        
+        loss = None
+        if targets is not None:
+            # calculate cross entropy loss
+            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
+
+        return logits, loss
