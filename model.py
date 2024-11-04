@@ -25,10 +25,15 @@ class CausalSelfAttention(nn.Module):
         assert config.n_embed % config.n_head == 0, "n_embed must be divisible by n_head"
         self.qkv = nn.Linear(config.n_embed, 3 * config.n_embed)
         self.c_proj = nn.Linear(config.n_embed, config.n_embed)
+
+        self.NANOGPT_SCALE_INIT = 1
+
         self.n_embed = config.n_embed
         self.n_head = config.n_head
         # causal mask to ensure that the attention is only applied to the left in the input sequence
         self.register_buffer("mask", torch.tril(torch.ones(config.block_size, config.block_size)).view(1, 1, config.block_size, config.block_size))
+
+
 
     def forward(self, x):
         # shape of x is (B, T, C)
@@ -74,6 +79,7 @@ class MLP(nn.Module):
         self.fc1 = nn.Linear(config.n_embed, 4 * config.n_embed)
         self.fc2 = nn.Linear(4 * config.n_embed, config.n_embed)
         self.gelu = nn.GELU(approximate='tanh')
+        self.NANOGPT_SCALE_INIT = 1
     
     def forward(self, x):
         # shape of x is (B, T, C)
@@ -108,6 +114,25 @@ class GPT2(nn.Module):
         )
         # final projection layer
         self.lm_head = nn.Linear(config.n_embed, config.vocab_size)
+
+        # weight sharing scheme
+        self.wte.weight = self.lm_head.weight
+
+        # init weights
+        self.apply(self._init_weights)
+
+
+    def _init_weights(self, module):
+        if isinstance(module, nn.Linear):
+            std = 0.02
+            if hasattr(module, 'NANOGPT_SCALE_INIT'):
+                # accounts for residual network pathways
+                std *= (2 * self.config.n_layer) ** -0.5
+            nn.init.normal_(module.weight, mean=0.0, std=std)
+            if module.bias is not None:
+                nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.Embedding):
+            nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
     def forward(self, x, targets=None):
         # x shape is (B, T)
