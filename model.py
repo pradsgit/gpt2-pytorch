@@ -10,8 +10,8 @@ import math
 # model config dataclass
 @dataclass
 class GPTConfig:
-    block_size: int = 100
-    vocab_size: int = 50257
+    block_size: int = 128
+    vocab_size: int = 50304
     n_embed: int = 768
     n_layer: int = 12
     n_head: int = 12
@@ -56,19 +56,21 @@ class CausalSelfAttention(nn.Module):
         # k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # k shape is (B, nh, T, hs)
         # v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # v shape is (B, nh, T, hs)
 
-        # calculate scaled alignment scores
-        align_scores = q @ k.transpose(-2, -1) * (1 / math.sqrt(k.size(-1))) # align_scores shape is (B, nh, T, T)
-        # apply mask
-        align_scores = align_scores.masked_fill(self.mask[:, :, :T, :T] == 0, float('-inf')) # apply mask
-        # softmax
-        align_scores = F.softmax(align_scores, dim=-1) # align_scores shape is (B, nh, T, T)
-        # apply attention
-        x = align_scores @ v # x shape is (B, nh, T, hs)
+        # # calculate scaled alignment scores
+        # align_scores = q @ k.transpose(-2, -1) * (1 / math.sqrt(k.size(-1))) # align_scores shape is (B, nh, T, T)
+        # # apply mask
+        # align_scores = align_scores.masked_fill(self.mask[:, :, :T, :T] == 0, float('-inf')) # apply mask
+        # # softmax
+        # align_scores = F.softmax(align_scores, dim=-1) # align_scores shape is (B, nh, T, T)
+        # # apply attention
+        # y = align_scores @ v # x shape is (B, nh, T, hs)
+
+        y = F.scaled_dot_product_attention(q, k, v, is_causal=True) # flash attention
         # reshape x with shape (B, nh, T, hs) to (B, T, C)
-        x = x.transpose(1, 2).contiguous().view(B, T, C) # x shape is (B, T, C)
+        y = y.transpose(1, 2).contiguous().view(B, T, C) # x shape is (B, T, C)
         # project x to output
-        x = self.c_proj(x) # x shape is (B, T, C)
-        return x
+        y = self.c_proj(y) # x shape is (B, T, C)
+        return y
 
 # mlp layer
 class MLP(nn.Module):
